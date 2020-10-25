@@ -31,12 +31,13 @@ def pickle_data():
 
 
 # 5, 10, 30 min, 1, 3, 6 hour, 1, 5, 10 day
-scales = [5, 10, 30, 60, 180, 360, 1440, 7200, 14400]
+scales = [5, 10, 30, 60, 180, 360, 1440]
 def scale_data():
+    os.mkdir('processed_pickles')
     for picklename in glob.glob('pickles/*'):
         slash_index = picklename.find('\\')
         data = pd.read_pickle(picklename)
-        data.to_pickle('processed_pickles/00001 --- ' + picklename[slash_index+1:])
+        data.to_pickle('processed_pickles/0001 --- ' + picklename[slash_index+1:])
         data.reset_index(inplace=True)
         for scale in scales:
             data['dummy'] = data.index.to_series().apply(lambda n: n // scale)
@@ -54,22 +55,21 @@ def scale_data():
             new_data.reset_index(drop=True, inplace=True)
             data.drop(data.tail(1).index, inplace=True)
 
-            new_data.to_pickle('processed_pickles/' + str(scale).zfill(5) + ' --- ' + picklename[slash_index+1:])
-
-# scale_data()
+            new_data.to_pickle('processed_pickles/' + str(scale).zfill(4) + ' --- ' + picklename[slash_index+1:])
 
 
-colors = fplt.make_marketcolors(up='#00ff00', down='#ff0000',
-                                edge={'up': '#00ff00', 'down': '#ff0000'},
-                                wick={'up': '#00ff00', 'down': '#ff0000'},
-                                volume='#0000ff',
+
+colors = fplt.make_marketcolors(up='#000000', down='#ffffff',
+                                edge={'up': '#000000', 'down': '#ffffff'},
+                                wick={'up': '#000000', 'down': '#ffffff'},
+                                volume='#000000',
                                 alpha=1.0)
-style = fplt.make_mpf_style(marketcolors=colors, facecolor='#000000', rc={'savefig.facecolor': '#000000'})
-def create_save_graph(data, filename):
+def create_save_graph(data, filename, antialiased):
     data = data.set_index('datetime')
+    style = fplt.make_mpf_style(marketcolors=colors, facecolor='#000000', rc={'savefig.facecolor': '#000000', 'lines.antialiased': antialiased, 'patch.antialiased': antialiased})
     fplt.plot(data,
               type='candle',
-              volume=True,
+              # volume=True,
               figratio=(10, 10),
               show_nontrading=False,
               axisoff=True,
@@ -86,37 +86,47 @@ def verify_continuous(data, start, length):
     return data.loc[start+length, 'datetime'] - data.loc[start, 'datetime'] == gap * length
 
 
-sign = lambda x: 1.0 if x > 0 else (-1 if x < 0 else 0)
+sign = lambda x: 1.0 if x >= 0 else 0.0
 def get_output(data):
     closes = (data['close']).reset_index(drop=True)
     return (closes[len(closes)-1] - closes[0]) / closes[0]
 
 
-scales = ['00001', '00005', '00010', '00030', '00060', '00180', '00360', '01440']
+# scales = ['0001', '0005', '0010', '0030', '0060', '0180', '0360', '1440']
 def create_dataset():
-    for scale in scales[-2:]:
-        os.mkdir('dataset/' + scale)
-        for picklename in glob.glob('processed_pickles/' + scale + '*.pkl'):
-            subdir = 'dataset/' + picklename[:picklename.find(' --- ')][-5:] + '/' + picklename[picklename.find(' --- ')+5: picklename.find('.')] + '/'
-            os.mkdir(subdir)
-            data = pd.read_pickle(picklename)
+    os.mkdir('dataset')
+    os.mkdir('dataset/class-0')
+    os.mkdir('dataset/class-1')
 
-            percentages = []
-            labels = []
+    os.mkdir('antialiased_dataset')
+    os.mkdir('antialiased_dataset/class-0')
+    os.mkdir('antialiased_dataset/class-1')
 
-            images_generated = 0
-            while images_generated < 200:
-                start = random.randrange(len(data))
-                if verify_continuous(data, start, 44):
-                    create_save_graph(data.loc[start : start+29], subdir + str(images_generated)+'.png')
-                    percentages.append(get_output(data.loc[start+29 : start+44]))
-                    labels.append(sign(percentages[-1]))
-                    images_generated-=-1
+    percentages = []
 
-            np.savetxt(subdir + 'percentages.txt', np.float64(percentages))
-            np.savetxt(subdir + 'labels.txt', np.array(labels))
+    total_images_generated = 0
+    for picklename in glob.glob('processed_pickles/*.pkl'):
+        data = pd.read_pickle(picklename)
 
-# os.mkdir('dataset')
+        print(picklename)
+
+        num_images_generated = 0
+        while num_images_generated < 200:
+            start = random.randrange(len(data))
+            if verify_continuous(data, start, 44):
+                percentages.append(get_output(data.loc[start+29 : start+44]))
+                label = int(sign(percentages[-1]))
+
+                create_save_graph(data.loc[start : start+29], 'antialiased_dataset/class-' + str(label) + '/' + str(total_images_generated) + '.png', True)
+                create_save_graph(data.loc[start : start+29], 'dataset/class-' + str(label) + '/' + str(total_images_generated) + '.png', False)
+
+                num_images_generated-=-1
+                total_images_generated-=-1
+
+    np.savetxt('percentages.txt', np.float64(percentages))
+
+
+# scale_data()
 create_dataset()
 
 
