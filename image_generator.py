@@ -30,7 +30,7 @@ def pickle_data():
         data.to_pickle('pickles/' + filename[filename.find('\\')+1:] + '.pkl')
 
 
-# 5, 10, 30 min, 1, 3, 6 hour, 1, 5, 10 day
+# 5, 10, 30 min, 1, 3, 6 hour, 1 day
 scales = [5, 10, 30, 60, 180, 360, 1440]
 def scale_data():
     os.mkdir('processed_pickles')
@@ -59,23 +59,44 @@ def scale_data():
 
 
 
-colors = fplt.make_marketcolors(up='#000000', down='#ffffff',
-                                edge={'up': '#000000', 'down': '#ffffff'},
-                                wick={'up': '#000000', 'down': '#ffffff'},
-                                volume='#000000',
-                                alpha=1.0)
-def create_save_graph(data, filename, antialiased):
-    data = data.set_index('datetime')
-    style = fplt.make_mpf_style(marketcolors=colors, facecolor='#000000', rc={'savefig.facecolor': '#000000', 'lines.antialiased': antialiased, 'patch.antialiased': antialiased})
-    fplt.plot(data,
-              type='candle',
-              # volume=True,
-              figratio=(10, 10),
-              show_nontrading=False,
-              axisoff=True,
-              figsize=(150/DPI, 150/DPI),
-              savefig={'fname': filename, 'pad_inches': 0, 'dpi': DPI, 'bbox_inches': 'tight'},
-              style=style)
+up_colors = fplt.make_marketcolors(up='#ffffff', down='#000000',
+                                  edge={'up': '#ffffff', 'down': '#000000'},
+                                  wick={'up': '#ffffff', 'down': '#000000'},
+                                  volume='#000000',
+                                  alpha=1.0)
+down_colors = fplt.make_marketcolors(up='#000000', down='#ffffff',
+                                    edge={'up': '#000000', 'down': '#ffffff'},
+                                    wick={'up': '#000000', 'down': '#ffffff'},
+                                    volume='#000000',
+                                    alpha=1.0)
+volume_colors = fplt.make_marketcolors(up='#000000', down='#000000',
+                                       edge={'up': '#000000', 'down': '#000000'},
+                                       wick={'up': '#000000', 'down': '#000000'},
+                                       volume='#ffffff',
+                                       alpha=1.0)
+
+def create_save_graph(data, filename, colors, antialiased):
+    if colors is not volume_colors:
+        data = data.set_index('datetime')
+        style = fplt.make_mpf_style(marketcolors=colors, facecolor='#000000', rc={'savefig.facecolor': '#000000', 'lines.antialiased': antialiased, 'patch.antialiased': antialiased})
+        fplt.plot(data,
+                  type='candle',
+                  # volume=colors is volume_colors,
+                  figratio=(10, 10),
+                  show_nontrading=False,
+                  axisoff=True,
+                  figsize=(150/DPI, 150/DPI),
+                  savefig={'fname': filename, 'pad_inches': 0, 'dpi': DPI, 'bbox_inches': 'tight'},
+                  style=style)
+    else:
+        fig = plt.figure(figsize=(150/DPI, 150/DPI), dpi=DPI)
+        ax = plt.Axes(fig, [0, 0, 1, 1])
+        ax.set_axis_off()
+        fig.add_axes(ax)
+        plt.bar(data.index, data['volume'], color='white', antialiased=antialiased)
+        fig.set_size_inches(1, 1)
+        plt.savefig(fname=filename, dpi=150, facecolor='black', pad_inches=0, bbox_inches='tight')
+        plt.close(fig)
 
 
 
@@ -86,23 +107,22 @@ def verify_continuous(data, start, length):
     return data.loc[start+length, 'datetime'] - data.loc[start, 'datetime'] == gap * length
 
 
-sign = lambda x: 1.0 if x >= 0 else 0.0
+strict_sign = lambda x: 1.0 if x > 0 else 0.0
+monotonic_sign = lambda x: 1.0 if x >= 0 else 0.0
 def get_output(data):
     closes = (data['close']).reset_index(drop=True)
     return (closes[len(closes)-1] - closes[0]) / closes[0]
 
 
 # scales = ['0001', '0005', '0010', '0030', '0060', '0180', '0360', '1440']
-def create_dataset():
-    os.mkdir('dataset')
-    os.mkdir('dataset/class-0')
-    os.mkdir('dataset/class-1')
-
-    os.mkdir('antialiased_dataset')
-    os.mkdir('antialiased_dataset/class-0')
-    os.mkdir('antialiased_dataset/class-1')
-
+def create_dataset(antialiased=True):
+    os.mkdir('new_dataset')
+    os.mkdir('new_dataset/up_bars')
+    os.mkdir('new_dataset/down_bars')
+    os.mkdir('new_dataset/volume_bars')
     percentages = []
+    strict_increase_labels = []
+    monotonic_increase_labels = []
 
     total_images_generated = 0
     for picklename in glob.glob('processed_pickles/*.pkl'):
@@ -110,24 +130,27 @@ def create_dataset():
 
         print(picklename)
 
-        num_images_generated = 0
-        while num_images_generated < 200:
+        for i in range(200):
             start = random.randrange(len(data))
             if verify_continuous(data, start, 44):
                 percentages.append(get_output(data.loc[start+29 : start+44]))
-                label = int(sign(percentages[-1]))
+                strict_increase_labels.append(int(strict_sign(percentages[-1])))
+                strict_increase_labels.append(int(monotonic_sign(percentages[-1])))
 
-                create_save_graph(data.loc[start : start+29], 'antialiased_dataset/class-' + str(label) + '/' + str(total_images_generated) + '.png', True)
-                create_save_graph(data.loc[start : start+29], 'dataset/class-' + str(label) + '/' + str(total_images_generated) + '.png', False)
+                create_save_graph(data.loc[start : start+29], 'new_dataset/up_bars/' + str(total_images_generated) + '.png', up_colors, antialiased)
+                create_save_graph(data.loc[start : start+29], 'new_dataset/down_bars/' + str(total_images_generated) + '.png', down_colors, antialiased)
+                create_save_graph(data.loc[start : start+29], 'new_dataset/volume_bars/' + str(total_images_generated) + '.png', volume_colors, antialiased)
 
-                num_images_generated-=-1
                 total_images_generated-=-1
 
     np.savetxt('percentages.txt', np.float64(percentages))
+    np.savetxt('strict_increase_labels.txt', np.int32(strict_increase_labels), fmt='%i')
+    np.savetxt('monotonic_increase_labels.txt', np.int32(monotonic_increase_labels), fmt='%i')
 
 
 # scale_data()
-create_dataset()
+# create_dataset()
+create_dataset(False)
 
 
 # 150 images from each file per bar type, gives 1800 images per class
